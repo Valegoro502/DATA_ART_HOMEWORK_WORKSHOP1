@@ -31,6 +31,7 @@ export default function ChatArea() {
 
   useEffect(() => {
     setRoomContext(null);
+    setIsBlocked(false);
     if (activeRoomId) {
       fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }

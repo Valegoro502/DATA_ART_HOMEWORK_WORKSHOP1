@@ -131,6 +131,23 @@ router.get('/pending-requests', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// Get Blocked Users
+router.get('/blocked', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const blocks = await prisma.userBan.findMany({
+      where: { bannerId: userId },
+      include: { banned: { select: { id: true, username: true } } }
+    });
+    
+    // map to just return standard user-like objects
+    const blockedUsers = blocks.map(b => b.banned);
+    res.json(blockedUsers);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Remove Friend or Cancel Request
 router.delete('/friends/:id', authenticate, async (req: AuthRequest, res) => {
   try {

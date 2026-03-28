@@ -3,9 +3,10 @@ import { useAuthStore } from '../store/useAuthStore';
 
 export default function FriendsModal({ onClose }: { onClose: () => void }) {
   const { token, user } = useAuthStore();
-  const [tab, setTab] = useState<'FRIENDS' | 'REQUESTS' | 'SEARCH'>('FRIENDS');
+  const [tab, setTab] = useState<'FRIENDS' | 'REQUESTS' | 'SEARCH' | 'BLOCKED'>('FRIENDS');
   const [friends, setFriends] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
 
@@ -24,6 +25,15 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) setRequests(await res.json());
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchBlockedUsers = async () => {
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/users/blocked`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) setBlockedUsers(await res.json());
     } catch (e) { console.error(e); }
   };
 
@@ -90,6 +100,22 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
       if (res.ok) {
         alert('User has been blocked.');
         fetchFriends();
+        fetchBlockedUsers();
+      } else {
+        alert((await res.json()).error);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const unblockUser = async (id: string) => {
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/users/${id}/unblock`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert('User has been unblocked.');
+        fetchBlockedUsers();
       } else {
         alert((await res.json()).error);
       }
@@ -99,6 +125,7 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (tab === 'FRIENDS') fetchFriends();
     if (tab === 'REQUESTS') fetchRequests();
+    if (tab === 'BLOCKED') fetchBlockedUsers();
   }, [tab]);
 
   return (
@@ -109,10 +136,11 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
           <button style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', fontSize: '16px' }} onClick={onClose}>✕</button>
         </div>
         
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-          <button className="small-action" style={{ flex: 1, opacity: tab === 'FRIENDS' ? 1 : 0.5 }} onClick={() => setTab('FRIENDS')}>Friends</button>
-          <button className="small-action" style={{ flex: 1, opacity: tab === 'REQUESTS' ? 1 : 0.5 }} onClick={() => setTab('REQUESTS')}>Requests</button>
-          <button className="small-action" style={{ flex: 1, opacity: tab === 'SEARCH' ? 1 : 0.5 }} onClick={() => setTab('SEARCH')}>Search</button>
+        <div style={{ display: 'flex', gap: '5px', marginBottom: '15px', flexWrap: 'wrap' }}>
+          <button className="small-action" style={{ flex: '1 1 40%', opacity: tab === 'FRIENDS' ? 1 : 0.5 }} onClick={() => setTab('FRIENDS')}>Friends</button>
+          <button className="small-action" style={{ flex: '1 1 40%', opacity: tab === 'REQUESTS' ? 1 : 0.5 }} onClick={() => setTab('REQUESTS')}>Requests</button>
+          <button className="small-action" style={{ flex: '1 1 40%', opacity: tab === 'SEARCH' ? 1 : 0.5 }} onClick={() => setTab('SEARCH')}>Search</button>
+          <button className="small-action" style={{ flex: '1 1 40%', opacity: tab === 'BLOCKED' ? 1 : 0.5 }} onClick={() => setTab('BLOCKED')}>Blocked</button>
         </div>
 
         {tab === 'FRIENDS' && (
@@ -158,6 +186,7 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
               <button type="submit" className="small-action">Search</button>
             </form>
             <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+              {searchResults.length === 0 ? <p style={{ color: 'rgba(255,255,255,0.5)' }}>No results.</p> : null}
               {searchResults.map(s => (
                 <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                   <span>{s.username}</span>
@@ -165,6 +194,18 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {tab === 'BLOCKED' && (
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {blockedUsers.length === 0 ? <p style={{ color: 'rgba(255,255,255,0.5)' }}>No blocked users.</p> : null}
+            {blockedUsers.map(b => (
+              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <span>{b.username}</span>
+                <button className="small-action" style={{ padding: '2px 8px', fontSize: '10px' }} onClick={() => unblockUser(b.id)}>Unblock</button>
+              </div>
+            ))}
           </div>
         )}
       </div>
