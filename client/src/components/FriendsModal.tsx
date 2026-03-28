@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuthStore } from '../store/useAuthStore';
 
 export default function FriendsModal({ onClose }: { onClose: () => void }) {
@@ -128,7 +129,7 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
     if (tab === 'BLOCKED') fetchBlockedUsers();
   }, [tab]);
 
-  return (
+  return createPortal(
     <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000}}>
       <div className="glass-panel" style={{ width: '400px', padding: '20px', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
@@ -209,6 +210,7 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -117,7 +117,7 @@ model Message {
   roomId         String?  // Null means it's a personal message
   recipientId    String?  // Used for personal messages
   senderId       String
-  content        String   @db.Text
+  content        String?  @db.Text
   attachmentUrl  String?
   attachmentName String?
   replyToId      String?

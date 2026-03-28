@@ -32,6 +32,7 @@ export default function ChatArea() {
   useEffect(() => {
     setRoomContext(null);
     setIsBlocked(false);
+    setMessages([]);
     if (activeRoomId) {
       fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -56,12 +57,36 @@ export default function ChatArea() {
     }
   }, [activeRoomId, activeRecipientId, token]);
 
-  // Auto-scroll logic could be here:
+  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Listen for real-time new messages via socket
+  useEffect(() => {
+    const socket = socketService.socket;
+    if (!socket) return;
+
+    const handleNewMessage = (message: any) => {
+      // Only add if it belongs to the current active chat
+      const isCurrentRoom = activeRoomId && message.roomId === activeRoomId;
+      const isCurrentDM = activeRecipientId && !message.roomId && (
+        message.senderId === activeRecipientId || message.recipientId === activeRecipientId
+      );
+      if (isCurrentRoom || isCurrentDM) {
+        setMessages(prev => {
+          // Deduplicate: don't add if we already have this ID
+          if (prev.some(m => m.id === message.id)) return prev;
+          return [...prev, message];
+        });
+      }
+    };
+
+    socket.on('message:new', handleNewMessage);
+    return () => { socket.off('message:new', handleNewMessage); };
+  }, [activeRoomId, activeRecipientId]);
 
   const handleInvite = async () => {
     const username = window.prompt("Enter the username to invite to this room:");
@@ -115,31 +140,38 @@ export default function ChatArea() {
         attachmentName = uploadData.filename;
       }
 
+      // Build body - omit null fields so Zod doesn't reject them
+      const body: Record<string, any> = {};
+      if (activeRoomId) body.roomId = activeRoomId;
+      if (activeRecipientId) body.recipientId = activeRecipientId;
+      if (text.trim()) body.content = text.trim();
+      if (attachmentUrl) body.attachmentUrl = attachmentUrl;
+      if (attachmentName) body.attachmentName = attachmentName;
+
       const res = await fetch(`http://${window.location.hostname}:3000/api/messages`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}` 
         },
-        body: JSON.stringify({ 
-          roomId: activeRoomId || undefined,
-          recipientId: activeRecipientId || undefined,
-          content: text.trim() ? text : null,
-          attachmentUrl,
-          attachmentName
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
+      setIsUploading(false);
       if (res.ok) {
-        setMessages([...messages, data]);
-        socketService.socket?.emit('chat:send', { roomId: activeRoomId, recipientId: activeRecipientId, message: data });
+        // Do NOT add message here - the socket 'message:new' event will handle it
+        // for both the sender and all other participants.
         setText('');
         setAttachment(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
+      } else {
+        const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data);
+        alert('Send error: ' + errMsg);
       }
     } catch (e) {
       console.error(e);
       setIsUploading(false);
+      alert('Network error — could not send message');
     }
   };
 

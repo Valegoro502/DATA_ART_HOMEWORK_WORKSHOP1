@@ -6,8 +6,8 @@ import { authenticate } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Ensure upload dir exists
-const uploadDir = path.join(__dirname, '../../uploads');
+// Use absolute path - /app/uploads in Docker, configurable via env
+const uploadDir = process.env.UPLOAD_DIR || '/app/uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

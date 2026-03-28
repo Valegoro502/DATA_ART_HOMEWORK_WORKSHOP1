@@ -8,9 +8,9 @@ const router = Router();
 const sendMessageSchema = z.object({
   roomId: z.string().optional(),
   recipientId: z.string().optional(),
-  content: z.string().max(3000).nullable().optional(), // Allow empty text if sending files
-  attachmentUrl: z.string().optional(),
-  attachmentName: z.string().optional(),
+  content: z.string().max(3000).nullable().optional(),
+  attachmentUrl: z.string().nullable().optional(),
+  attachmentName: z.string().nullable().optional(),
   replyToId: z.string().optional()
 });
 
@@ -86,9 +86,17 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       }
     });
 
-    // We can't emit websocket events from here easily without sharing the io instance,
-    // so let's just return the message and let the frontend emit a WS 'chat:sent' event 
-    // to broadcast, OR we can attach io to req.app.get('io').
+    // Emit via socket so all participants see the message in real-time
+    const io = req.app.get('io');
+    if (io) {
+      if (roomId) {
+        io.to(`room:${roomId}`).emit('message:new', message);
+      } else if (recipientId) {
+        io.to(`user:${senderId}`).emit('message:new', message);
+        io.to(`user:${recipientId}`).emit('message:new', message);
+      }
+    }
+
     res.status(201).json(message);
   } catch (error) {
     if (error instanceof z.ZodError) {

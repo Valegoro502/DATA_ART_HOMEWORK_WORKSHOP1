@@ -13,24 +13,30 @@ export default function Sidebar() {
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
 
+  const fetchFriends = async () => {
+    try {
+      const resFriends = await fetch(`http://${window.location.hostname}:3000/api/users/friends`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (resFriends.ok) setFriends(await resFriends.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
-    const fetchRoomsAndFriends = async () => {
+    const fetchRooms = async () => {
       try {
         const resRooms = await fetch(`http://${window.location.hostname}:3000/api/rooms/my-rooms`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (resRooms.ok) setRooms(await resRooms.json());
-
-        const resFriends = await fetch(`http://${window.location.hostname}:3000/api/users/friends`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (resFriends.ok) setFriends(await resFriends.json());
-
       } catch (e) {
         console.error(e);
       }
     };
-    fetchRoomsAndFriends();
+    fetchRooms();
+    fetchFriends();
   }, [token]);
 
   const handleCreateRoom = async (e: React.FormEvent) => {
@@ -127,7 +133,12 @@ export default function Sidebar() {
         ))}
       </div>
 
-      {showFriendsModal && <FriendsModal onClose={() => setShowFriendsModal(false)} />}
+      {showFriendsModal && (
+        <FriendsModal onClose={() => {
+          setShowFriendsModal(false);
+          fetchFriends();
+        }} />
+      )}
     </div>
   );
 }

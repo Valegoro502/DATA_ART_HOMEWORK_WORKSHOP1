@@ -27,7 +27,8 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
+// Serve uploads using our known absolute path
+app.use('/uploads', express.static('/app/uploads'));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
