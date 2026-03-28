@@ -36,7 +36,7 @@ router.post('/register', async (req, res) => {
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
       data: { username, email, passwordHash },
-      select: { id: true, username: true, email: true }
+      select: { id: true, username: true, email: true, isGlobalAdmin: true }
     });
 
     res.status(201).json(user);
@@ -80,7 +80,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token,
-      user: { id: user.id, username: user.username, email: user.email }
+      user: { id: user.id, username: user.username, email: user.email, isGlobalAdmin: user.isGlobalAdmin }
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
