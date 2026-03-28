@@ -114,6 +114,47 @@ export default function ChatArea() {
     }
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!window.confirm("Are you sure you want to delete this message?")) return;
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Refresh messages or optimistically remove/update it
+        if (data.message === 'Message softly deleted') {
+          setMessages(messages.map(m => m.id === messageId ? { ...m, content: "An administrator has deleted this message.", attachmentUrl: null, attachmentName: null } : m));
+        } else {
+          setMessages(messages.filter(m => m.id !== messageId));
+        }
+      } else {
+        alert(data.error);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!window.confirm("CRITICAL WARNING: Are you sure you want to completely delete this room? This action cannot be undone.")) return;
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert("Room deleted. Please refresh the page.");
+        window.location.reload();
+      } else {
+        alert((await res.json()).error);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const renderAttachment = (url?: string, name?: string) => {
     if (!url) return null;
     const isImage = url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i);
@@ -151,14 +192,30 @@ export default function ChatArea() {
     <div className="chat-area">
       <div className="chat-header glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3>Room Messages</h3>
-        <button className="small-action" onClick={handleInvite}>Invite User</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="small-action" onClick={handleInvite}>Invite User</button>
+          {user?.isGlobalAdmin && (
+            <button className="small-action" style={{ background: '#ff4d4f' }} onClick={handleDeleteRoom}>Delete Room</button>
+          )}
+        </div>
       </div>
       
       <div className="chat-messages" ref={scrollRef}>
         {messages.map(msg => (
           <div key={msg.id} className={`message ${msg.senderId === user?.id ? 'mine' : 'theirs'}`}>
-            <div className="message-sender">{msg.sender.username}</div>
-            {msg.content && <div className="message-content">{msg.content}</div>}
+            <div className="message-sender" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{msg.sender.username}</span>
+              {(user?.isGlobalAdmin || msg.senderId === user?.id) && (
+                <button 
+                  onClick={() => handleDeleteMessage(msg.id)}
+                  style={{ background: 'transparent', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: '12px', padding: '0 5px' }}
+                  title="Delete Message"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {msg.content && <div className="message-content" style={{ fontStyle: msg.content === "An administrator has deleted this message." ? 'italic' : 'normal', color: msg.content === "An administrator has deleted this message." ? '#ff4d4f' : 'inherit' }}>{msg.content}</div>}
             {renderAttachment(msg.attachmentUrl, msg.attachmentName)}
           </div>
         ))}

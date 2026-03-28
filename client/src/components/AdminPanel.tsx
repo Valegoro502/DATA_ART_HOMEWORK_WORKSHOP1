@@ -22,6 +22,19 @@ export default function AdminPanel() {
   }, [token]);
 
   const handleBan = async (userId: string, type: 'PERMANENT' | 'PARTIAL') => {
+    let durationHours: number | undefined;
+
+    if (type === 'PARTIAL') {
+      const input = window.prompt("Enter the duration of the partial ban in HOURS (e.g. 24 for 1 day):");
+      if (input === null) return; // User cancelled
+      const hours = parseFloat(input);
+      if (isNaN(hours) || hours <= 0) {
+        alert("Invalid duration. Please enter a valid number of hours.");
+        return;
+      }
+      durationHours = hours;
+    }
+
     try {
       const res = await fetch(`http://${window.location.hostname}:3000/api/admin/ban`, {
         method: 'POST',
@@ -29,7 +42,7 @@ export default function AdminPanel() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ userId, type })
+        body: JSON.stringify({ userId, type, durationHours })
       });
       if (res.ok) fetchUsers();
       else alert((await res.json()).error);
@@ -77,7 +90,12 @@ export default function AdminPanel() {
                 <td style={{ padding: '10px' }}>{u.email}</td>
                 <td style={{ padding: '10px' }}>
                   {u.globalBanType === 'PERMANENT' ? <span style={{ color: '#ff4d4f' }}>Permanently Banned</span>
-                   : u.globalBanType === 'PARTIAL' ? <span style={{ color: '#faad14' }}>Partially Banned</span>
+                   : u.globalBanType === 'PARTIAL' ? (
+                       <div style={{ color: '#faad14' }}>
+                         Partially Banned<br/>
+                         {u.globalBanUntil && <small>Until: {new Date(u.globalBanUntil).toLocaleString()}</small>}
+                       </div>
+                     )
                    : <span style={{ color: '#52c41a' }}>Active</span>}
                 </td>
                 <td style={{ padding: '10px' }}>

@@ -16,6 +16,7 @@ router.get('/users', async (req: AuthRequest, res) => {
         username: true,
         email: true,
         globalBanType: true,
+        globalBanUntil: true,
         isGlobalAdmin: true,
         createdAt: true
       },
@@ -28,9 +29,9 @@ router.get('/users', async (req: AuthRequest, res) => {
 });
 
 // Issue Ban
-router.post('/ban', async (req: AuthRequest, res) => {
+  router.post('/ban', async (req: AuthRequest, res) => {
   try {
-    const { userId, type } = req.body;
+    const { userId, type, durationHours } = req.body;
     
     if (userId === req.user!.id) {
         return res.status(400).json({ error: 'Cannot ban yourself' });
@@ -44,9 +45,14 @@ router.post('/ban', async (req: AuthRequest, res) => {
     if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.isGlobalAdmin) return res.status(403).json({ error: 'Cannot ban another admin' });
 
+    let globalBanUntil = null;
+    if (type === 'PARTIAL' && typeof durationHours === 'number' && durationHours > 0) {
+        globalBanUntil = new Date(Date.now() + durationHours * 60 * 60 * 1000);
+    }
+
     const updated = await prisma.user.update({
       where: { id: userId },
-      data: { globalBanType: type }
+      data: { globalBanType: type, globalBanUntil }
     });
 
     if (type === 'PERMANENT') {
@@ -72,7 +78,7 @@ router.post('/unban', async (req: AuthRequest, res) => {
 
     const updated = await prisma.user.update({
       where: { id: userId },
-      data: { globalBanType: null }
+      data: { globalBanType: null, globalBanUntil: null }
     });
 
     res.json({ message: 'User unbanned', user: updated });

@@ -42,7 +42,14 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const userId = req.user!.id;
 
     if (req.user!.globalBanType === 'PARTIAL') {
-      return res.status(403).json({ error: 'You are partially banned and cannot create rooms.' });
+      let msg = 'You are partially banned and cannot create rooms.';
+      if (req.user!.globalBanUntil) {
+          const diff = req.user!.globalBanUntil.getTime() - Date.now();
+          const hours = Math.floor(diff / (1000 * 60 * 60));
+          const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          msg = `You are partially banned. Time remaining: ${hours} hours and ${mins} minutes.`;
+      }
+      return res.status(403).json({ error: msg });
     }
 
     const existingInfo = await prisma.room.findUnique({ where: { name } });
@@ -68,6 +75,26 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     res.status(201).json(room);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete Room
+router.delete('/:roomId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.user!.id;
+
+    const room = await prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+
+    if (room.ownerId !== userId && !req.user!.isGlobalAdmin) {
+      return res.status(403).json({ error: 'Only the room owner or a global admin can delete this room' });
+    }
+
+    await prisma.room.delete({ where: { id: roomId } });
+    res.json({ message: 'Room deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error parsing room deletion' });
   }
 });
 
@@ -123,7 +150,14 @@ router.get('/:roomId/context', authenticate, async (req: AuthRequest, res) => {
 router.post('/:roomId/join', authenticate, async (req: AuthRequest, res) => {
   try {
     if (req.user!.globalBanType === 'PARTIAL') {
-      return res.status(403).json({ error: 'You are partially banned and cannot join new rooms.' });
+      let msg = 'You are partially banned and cannot join new rooms.';
+      if (req.user!.globalBanUntil) {
+          const diff = req.user!.globalBanUntil.getTime() - Date.now();
+          const hours = Math.floor(diff / (1000 * 60 * 60));
+          const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          msg = `You are partially banned. Time remaining: ${hours} hours and ${mins} minutes.`;
+      }
+      return res.status(403).json({ error: msg });
     }
 
     const { roomId } = req.params;

@@ -8,7 +8,7 @@ const router = Router();
 const sendMessageSchema = z.object({
   roomId: z.string().optional(),
   recipientId: z.string().optional(),
-  content: z.string().max(3000), // Max text size 3KB
+  content: z.string().max(3000).nullable().optional(), // Allow empty text if sending files
   attachmentUrl: z.string().optional(),
   attachmentName: z.string().optional(),
   replyToId: z.string().optional()
@@ -20,7 +20,14 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const senderId = req.user!.id;
 
     if (req.user!.globalBanType === 'PARTIAL') {
-       return res.status(403).json({ error: 'You are partially banned and cannot send messages.' });
+       let msg = 'You are partially banned and cannot send messages.';
+       if (req.user!.globalBanUntil) {
+           const diff = req.user!.globalBanUntil.getTime() - Date.now();
+           const hours = Math.floor(diff / (1000 * 60 * 60));
+           const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+           msg = `You are partially banned. Time remaining: ${hours} hours and ${mins} minutes.`;
+       }
+       return res.status(403).json({ error: msg });
     }
 
     if (!roomId && !recipientId) {
@@ -129,22 +136,48 @@ router.delete('/:messageId', authenticate, async (req: AuthRequest, res) => {
     });
     if (!message) return res.status(404).json({ error: 'Not found' });
 
+    let isAdminDelete = false;
     let allowed = false;
-    if (message.senderId === userId) {
+
+    if (req.user!.isGlobalAdmin) {
+        isAdminDelete = true;
         allowed = true;
     } else if (message.roomId) {
-        // Check if admin
         const member = await prisma.roomMember.findUnique({
             where: { roomId_userId: { roomId: message.roomId, userId } }
         });
-        if (member && member.role === 'ADMIN') allowed = true;
-        if (message.room && message.room.ownerId === userId) allowed = true;
+        if (member && member.role === 'ADMIN') {
+            isAdminDelete = true;
+            allowed = true;
+        }
+        if (message.room && message.room.ownerId === userId) {
+            isAdminDelete = true;
+            allowed = true;
+        }
+    }
+
+    if (message.senderId === userId) {
+        allowed = true; // Senders can always delete their own messages
     }
 
     if (!allowed) return res.status(403).json({ error: 'Unauthorized to delete' });
 
-    await prisma.message.delete({ where: { id: messageId } });
-    res.json({ message: 'Deleted' });
+    if (isAdminDelete && message.senderId !== userId) {
+        // Admin deleting another person's message -> Soft Delete
+        await prisma.message.update({
+            where: { id: messageId },
+            data: {
+                content: "An administrator has deleted this message.",
+                attachmentUrl: null,
+                attachmentName: null
+            }
+        });
+        return res.json({ message: 'Message softly deleted' });
+    } else {
+        // Normal hard delete
+        await prisma.message.delete({ where: { id: messageId } });
+        return res.json({ message: 'Deleted' });
+    }
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

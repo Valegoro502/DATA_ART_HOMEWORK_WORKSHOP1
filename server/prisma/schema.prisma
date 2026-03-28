@@ -14,6 +14,7 @@ model User {
   passwordHash     String
   isGlobalAdmin    Boolean      @default(false)
   globalBanType    String?
+  globalBanUntil   DateTime?
   createdAt        DateTime     @default(now())
   sessions         Session[]
   ownedRooms       Room[]       @relation("OwnedRooms")

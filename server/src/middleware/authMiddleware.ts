@@ -8,6 +8,7 @@ export interface AuthRequest extends Request {
     username: string;
     isGlobalAdmin: boolean;
     globalBanType: string | null;
+    globalBanUntil: Date | null;
   };
   sessionId?: string;
 }
@@ -35,6 +36,18 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       return res.status(403).json({ error: 'Your account has been permanently banned.' });
     }
 
+    if (session.user.globalBanType === 'PARTIAL' && session.user.globalBanUntil) {
+      if (new Date() > session.user.globalBanUntil) {
+        // Ban expired!
+        await prisma.user.update({
+          where: { id: session.user.id },
+          data: { globalBanType: null, globalBanUntil: null }
+        });
+        session.user.globalBanType = null;
+        session.user.globalBanUntil = null;
+      }
+    }
+
     // Optional: verify JWT signature, but if the session is in DB, we trust it
     const decoded = verifyToken(token);
     if (!decoded) {
@@ -46,7 +59,8 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       id: session.user.id, 
       username: session.user.username,
       isGlobalAdmin: session.user.isGlobalAdmin,
-      globalBanType: session.user.globalBanType
+      globalBanType: session.user.globalBanType,
+      globalBanUntil: session.user.globalBanUntil
     };
     req.sessionId = session.id;
 
