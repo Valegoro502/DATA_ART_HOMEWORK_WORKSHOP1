@@ -61,24 +61,7 @@ async function seedAdmin() {
 }
 seedAdmin();
 
-// Socket logic
-const activeUsers = new Map<string, Set<string>>(); // userId -> set of socketIds
-const socketToUser = new Map<string, string>(); // socketId -> userId
-const socketStatus = new Map<string, 'active' | 'afk'>(); // socketId -> status
-
-function getAggregatedStatus(userId: string): 'active' | 'afk' | 'offline' {
-  const socketIds = activeUsers.get(userId);
-  if (!socketIds || socketIds.size === 0) return 'offline';
-
-  let allAfk = true;
-  for (const sid of socketIds) {
-    if (socketStatus.get(sid) === 'active') {
-      allAfk = false;
-      break;
-    }
-  }
-  return allAfk ? 'afk' : 'active';
-}
+import { activeUsers, socketToUser, socketStatus, getAggregatedStatus } from './utils/presence';
 
 io.use(async (socket, next) => {
   try {

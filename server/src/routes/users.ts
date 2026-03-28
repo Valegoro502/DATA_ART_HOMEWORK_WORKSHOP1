@@ -56,6 +56,7 @@ router.get('/friends', authenticate, async (req: AuthRequest, res) => {
 router.post('/:recipientId/friend-request', authenticate, async (req: AuthRequest, res) => {
   try {
     const { recipientId } = req.params;
+    const { message } = req.body;
     const userId = req.user!.id;
 
     if (recipientId === userId) return res.status(400).json({ error: 'Cannot add yourself' });
@@ -80,9 +81,14 @@ router.post('/:recipientId/friend-request', authenticate, async (req: AuthReques
         user1Id: existingId,
         user2Id: existingId2,
         status: 'PENDING',
-        initiatorId: userId
+        initiatorId: userId,
+        message: message || null
       },
-      update: {}
+      update: {
+        status: 'PENDING',
+        initiatorId: userId,
+        message: message || null
+      }
     });
 
     res.json({ message: 'Request sent' });
@@ -102,7 +108,7 @@ router.post('/:senderId/accept', authenticate, async (req: AuthRequest, res) => 
 
     await prisma.friendship.update({
       where: { user1Id_user2Id: { user1Id: existingId, user2Id: existingId2 } },
-      data: { status: 'ACCEPTED' }
+      data: { status: 'ACCEPTED', message: null }
     });
 
     res.json({ message: 'Request accepted' });
@@ -124,7 +130,10 @@ router.get('/pending-requests', authenticate, async (req: AuthRequest, res) => {
       include: { user1: { select: { id: true, username: true } }, user2: { select: { id: true, username: true } } }
     });
     
-    const mapped = requests.map(r => r.user1Id === userId ? r.user2 : r.user1);
+    const mapped = requests.map(r => {
+      const user = r.user1Id === userId ? r.user2 : r.user1;
+      return { ...user, message: r.message };
+    });
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

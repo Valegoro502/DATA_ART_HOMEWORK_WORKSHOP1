@@ -136,4 +136,57 @@ router.delete('/sessions/:id', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// Change Password
+router.post('/change-password', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string(),
+      newPassword: z.string().min(6)
+    }).parse(req.body);
+
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const isValid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!isValid) return res.status(400).json({ error: 'Current password incorrect' });
+
+    const passwordHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash }
+    });
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Invalid data' });
+  }
+});
+
+// Delete Account
+router.delete('/account', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    if (req.user!.isGlobalAdmin) {
+      return res.status(403).json({ error: 'Administrator accounts cannot be self-deleted' });
+    }
+
+    // 1. Find all rooms owned by this user and delete them.
+    // This will cascade to messages, memberships, and bans of those rooms.
+    await prisma.room.deleteMany({
+      where: { ownerId: userId }
+    });
+
+    // 2. Delete the user.
+    // This will cascade to friendships, individual memberships in other rooms, bans, and sessions.
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+
+    res.json({ message: 'Account deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error deleting account' });
+  }
+});
+
 export default router;

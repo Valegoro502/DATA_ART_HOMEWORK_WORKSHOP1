@@ -10,6 +10,7 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
   const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [requestMessage, setRequestMessage] = useState('');
 
   const fetchFriends = async () => {
     try {
@@ -53,10 +54,15 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
     try {
       const res = await fetch(`http://${window.location.hostname}:3000/api/users/${id}/friend-request`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ message: requestMessage })
       });
       if (res.ok) {
         alert('Request sent!');
+        setRequestMessage('');
       } else {
         alert((await res.json()).error);
       }
@@ -163,12 +169,15 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {requests.length === 0 ? <p style={{ color: 'rgba(255,255,255,0.5)' }}>No pending requests.</p> : null}
             {requests.map(r => (
-              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                <span>{r.username}</span>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <button className="small-action" style={{ padding: '2px 8px', background: '#52c41a', fontSize: '10px' }} onClick={() => acceptRequest(r.id)}>Accept</button>
-                  <button className="small-action" style={{ padding: '2px 8px', background: '#ff4d4f', fontSize: '10px' }} onClick={() => removeOrCancel(r.id)}>Reject</button>
+              <div key={r.id} style={{ display: 'flex', flexDirection: 'column', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                  <strong>{r.username}</strong>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <button className="small-action" style={{ padding: '2px 8px', background: '#52c41a', fontSize: '10px' }} onClick={() => acceptRequest(r.id)}>Accept</button>
+                    <button className="small-action" style={{ padding: '2px 8px', background: '#ff4d4f', fontSize: '10px' }} onClick={() => removeOrCancel(r.id)}>Reject</button>
+                  </div>
                 </div>
+                {r.message && <div style={{ fontSize: '11px', fontStyle: 'italic', color: 'rgba(255,255,255,0.6)', padding: '5px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>"{r.message}"</div>}
               </div>
             ))}
           </div>
@@ -189,9 +198,18 @@ export default function FriendsModal({ onClose }: { onClose: () => void }) {
             <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
               {searchResults.length === 0 ? <p style={{ color: 'rgba(255,255,255,0.5)' }}>No results.</p> : null}
               {searchResults.map(s => (
-                <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                  <span>{s.username}</span>
-                  <button className="small-action" style={{ padding: '2px 8px', background: '#0066cc', fontSize: '10px' }} onClick={() => sendRequest(s.id)}>Send Request</button>
+                <div key={s.id} style={{ display: 'flex', flexDirection: 'column', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                    <span>{s.username}</span>
+                    <button className="small-action" style={{ padding: '2px 8px', background: '#0066cc', fontSize: '10px' }} onClick={() => sendRequest(s.id)}>Send Request</button>
+                  </div>
+                  <input 
+                    type="text" 
+                    placeholder="Optional message..." 
+                    value={requestMessage} 
+                    onChange={e => setRequestMessage(e.target.value)} 
+                    style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '11px', color: 'white' }}
+                  />
                 </div>
               ))}
             </div>

@@ -66,9 +66,15 @@ export default function ChatArea() {
     }
   }, [activeRoomId, activeRecipientId, token]);
 
-  // Auto-scroll
+  // Smart Auto-scroll
   useEffect(() => {
-    if (scrollRef.current) {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    
+    // threshold: 100px from bottom
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    
+    if (isNearBottom) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);

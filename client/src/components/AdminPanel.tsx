@@ -6,13 +6,21 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'USERS' | 'ROOMS'>('USERS');
   const [users, setUsers] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
+  const [presence, setPresence] = useState<Record<string, 'active' | 'afk' | 'offline'>>({});
 
   const fetchUsers = async () => {
     try {
       const res = await fetch(`http://${window.location.hostname}:3000/api/admin/users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) setUsers(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data);
+        // Initialize presence from API response
+        const initialPresence: Record<string, any> = {};
+        data.forEach((u: any) => { initialPresence[u.id] = u.presence; });
+        setPresence(initialPresence);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -33,6 +41,17 @@ export default function AdminPanel() {
     if (activeTab === 'USERS') fetchUsers();
     else fetchRooms();
   }, [token, activeTab]);
+
+  // Presence listener
+  useEffect(() => {
+    const handlePresence = (e: any) => {
+      const { userId, status } = e.detail;
+      setPresence(prev => ({ ...prev, [userId]: status }));
+    };
+
+    window.addEventListener('presence-update', handlePresence);
+    return () => window.removeEventListener('presence-update', handlePresence);
+  }, []);
 
   const handleBan = async (userId: string, type: 'PERMANENT' | 'PARTIAL') => {
     let durationHours: number | undefined;
@@ -119,16 +138,30 @@ export default function AdminPanel() {
             <tbody>
               {users.map(u => (
                 <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                  <td style={{ padding: '10px' }}>{u.username} {u.isGlobalAdmin && '(Admin)'}</td>
-                  <td style={{ padding: '10px' }}>{u.email}</td>
                   <td style={{ padding: '10px' }}>
-                    {u.globalBanType ? (
-                      <span style={{ color: u.globalBanType === 'PERMANENT' ? '#ff4d4f' : '#faad14' }}>
-                        {u.globalBanType} Ban {u.globalBanUntil && `(until ${new Date(u.globalBanUntil).toLocaleDateString()})`}
-                      </span>
-                    ) : (
-                      <span style={{ color: '#52c41a' }}>Active</span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ 
+                        width: '10px', 
+                        height: '10px', 
+                        borderRadius: '50%', 
+                        background: presence[u.id] === 'active' ? '#52c41a' : presence[u.id] === 'afk' ? '#faad14' : '#555',
+                        boxShadow: presence[u.id] === 'active' ? '0 0 5px #52c41a' : 'none'
+                      }} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span>{u.username} {u.isGlobalAdmin && '(Admin)'}</span>
+                        {u.globalBanType && (
+                          <span style={{ fontSize: '10px', color: u.globalBanType === 'PERMANENT' ? '#ff4d4f' : '#faad14', fontWeight: 'bold' }}>
+                            {u.globalBanType} BAN {u.globalBanUntil && `UNTIL ${new Date(u.globalBanUntil).toLocaleDateString()}`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '10px' }}>{u.email}</td>
+                  <td style={{ padding: '10px', textTransform: 'capitalize' }}>
+                    <span style={{ color: presence[u.id] === 'active' ? '#52c41a' : presence[u.id] === 'afk' ? '#faad14' : '#999' }}>
+                      {presence[u.id] || 'offline'}
+                    </span>
                   </td>
                   <td style={{ padding: '10px' }}>
                     {!u.isGlobalAdmin && (
@@ -178,3 +211,4 @@ export default function AdminPanel() {
     </div>
   );
 }
+

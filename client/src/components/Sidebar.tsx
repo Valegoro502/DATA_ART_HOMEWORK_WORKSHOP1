@@ -4,6 +4,7 @@ import { useChatStore } from '../store/useChatStore';
 import { socketService } from '../lib/socket';
 import FriendsModal from './FriendsModal';
 import RoomExplorerModal from './RoomExplorerModal';
+import SettingsModal from './SettingsModal';
 
 export default function Sidebar() {
   const { user, token, logout } = useAuthStore();
@@ -11,9 +12,11 @@ export default function Sidebar() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [friends, setFriends] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
-  const [showContacts, setShowContacts] = useState(true);
+  const [showRooms, setShowRooms] = useState(true);
+  const [showContacts, setShowContacts] = useState(false);
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [showExplorer, setShowExplorer] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDescription, setNewRoomDescription] = useState('');
   const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
@@ -31,7 +34,6 @@ export default function Sidebar() {
     }
   };
 
-  // Helper: keys for localStorage
   const lastSeenKey = (id: string) => `lastSeen:${user?.id}:${id}`;
   const getLastSeen = (id: string): string => localStorage.getItem(lastSeenKey(id)) || new Date(0).toISOString();
   const markAsRead = (id: string) => localStorage.setItem(lastSeenKey(id), new Date().toISOString());
@@ -45,7 +47,6 @@ export default function Sidebar() {
       const roomList = await resRooms.json();
       setRooms(roomList);
 
-      // Fetch persistent unread counts for each room
       const counts: Record<string, number> = {};
       await Promise.all(roomList.map(async (r: any) => {
         const since = getLastSeen(r.id);
@@ -72,15 +73,12 @@ export default function Sidebar() {
     fetchFriends();
   }, [token]);
 
-  // Use refs so the socket listener always reads fresh values (no stale closure)
   const activeRoomRef = useRef(activeRoomId);
   const activeRecipientRef = useRef(activeRecipientId);
   useEffect(() => { activeRoomRef.current = activeRoomId; }, [activeRoomId]);
   useEffect(() => { activeRecipientRef.current = activeRecipientId; }, [activeRecipientId]);
 
-  // Listen for ALL incoming messages to track unread counts
   useEffect(() => {
-    // Retry until socket is ready
     const tryRegister = (): (() => void) | null => {
       const socket = socketService.socket;
       if (!socket) return null;
@@ -104,15 +102,14 @@ export default function Sidebar() {
       return () => { socket.off('message:new', handleNewMessage); };
     };
 
-    let cleanup: (() => void) | null = tryRegister();
-    // If socket wasn't ready, poll every 300ms until it is
-    let interval: ReturnType<typeof setInterval> | null = null;
+    let cleanup = tryRegister();
+    let interval: any = null;
     if (!cleanup) {
       interval = setInterval(() => {
         const result = tryRegister();
         if (result) {
           cleanup = result;
-          if (interval) clearInterval(interval);
+          clearInterval(interval);
         }
       }, 300);
     }
@@ -121,9 +118,8 @@ export default function Sidebar() {
       if (interval) clearInterval(interval);
       if (cleanup) cleanup();
     };
-  }, []); // register once, use refs for fresh values
+  }, []);
 
-  // Presence listener
   useEffect(() => {
     const handlePresence = (e: any) => {
       const { userId, status } = e.detail;
@@ -167,116 +163,155 @@ export default function Sidebar() {
     }
   };
 
+  const toggleRooms = () => {
+    setShowRooms(!showRooms);
+    if (!showRooms) setShowContacts(false);
+  };
+
+  const toggleContacts = () => {
+    setShowContacts(!showContacts);
+    if (!showContacts) setShowRooms(false);
+  };
+
   return (
     <div className="sidebar glass-panel">
       <div className="sidebar-header">
-        <h3>Chats</h3>
-        <div className="user-profile">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-            <span>{user?.username}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+          <h3>Classic Chat</h3>
+          <div style={{ display: 'flex', gap: '5px' }}>
+             <button className="small-action" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
+             <button className="small-action" onClick={logout} title="Logout">🚪</button>
+          </div>
+        </div>
+        <div className="user-profile" style={{ marginTop: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', width: '100%' }}>
+            <span style={{ fontWeight: 'bold' }}>{user?.username} {user?.isGlobalAdmin && '(Admin)'}</span>
             {user?.isGlobalAdmin && (
               <button 
                  className="small-action" 
-                 style={{ background: '#722ed1' }} 
+                 style={{ background: '#722ed1', width: '100%' }} 
                  onClick={() => setActiveChat('ADMIN_PANEL', null)}>
                  Admin Panel
               </button>
             )}
           </div>
-          <button className="small-action" onClick={logout}>Logout</button>
         </div>
       </div>
       <div className="room-list">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <h4>My Rooms</h4>
-          <div style={{ display: 'flex', gap: '5px' }}>
+        {/* Accordion My Rooms */}
+        <div 
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '5px' }}
+          onClick={toggleRooms}
+        >
+          <h4 style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            {showRooms ? '▼' : '▶'} My Rooms
+          </h4>
+          <div style={{ display: 'flex', gap: '5px' }} onClick={e => e.stopPropagation()}>
             <button className="small-action" onClick={() => setShowExplorer(true)}>Explore</button>
             <button className="small-action" onClick={() => setIsCreating(!isCreating)}>+</button>
           </div>
         </div>
         
-        {isCreating && (
-          <form onSubmit={handleCreateRoom} style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <input 
-              type="text" 
-              placeholder="Room Name..." 
-              value={newRoomName}
-              onChange={e => setNewRoomName(e.target.value)}
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white' }}
-              autoFocus
-            />
-            <textarea 
-              placeholder="Description (optional)" 
-              value={newRoomDescription}
-              onChange={e => setNewRoomDescription(e.target.value)}
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white', resize: 'none', height: '60px', fontSize: '12px' }}
-            />
-            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer' }}>
-              <input 
-                type="checkbox" 
-                checked={newRoomIsPrivate}
-                onChange={e => setNewRoomIsPrivate(e.target.checked)}
-              />
-              Private Room
-            </label>
-            <button type="submit" className="small-action" style={{ width: '100%' }}>Create</button>
-          </form>
+        {showRooms && (
+          <div style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '15px' }}>
+            {isCreating && (
+              <form onSubmit={handleCreateRoom} style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                <input 
+                  type="text" 
+                  placeholder="Room Name..." 
+                  value={newRoomName}
+                  onChange={e => setNewRoomName(e.target.value)}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white' }}
+                  autoFocus
+                />
+                <textarea 
+                  placeholder="Description (optional)" 
+                  value={newRoomDescription}
+                  onChange={e => setNewRoomDescription(e.target.value)}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white', resize: 'none', height: '60px', fontSize: '12px' }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={newRoomIsPrivate}
+                    onChange={e => setNewRoomIsPrivate(e.target.checked)}
+                  />
+                  Private Room
+                </label>
+                <button type="submit" className="small-action" style={{ width: '100%' }}>Create</button>
+              </form>
+            )}
+
+            {rooms.length === 0 && <div style={{ fontSize: '12px', opacity: 0.5, textAlign: 'center', padding: '10px' }}>No rooms joined</div>}
+            {rooms.map(r => (
+              <div 
+                key={r.id} 
+                className={`room-item ${activeRoomId === r.id ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveChat(r.id, null);
+                  markAsRead(r.id);
+                  setUnreadCounts(prev => { const n = {...prev}; delete n[r.id]; return n; });
+                }}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <span># {r.name}</span>
+                {unreadCounts[r.id] > 0 && (
+                  <span style={{ background: '#ff4d4f', color: '#fff', borderRadius: '50%', minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', padding: '0 4px' }}>
+                    {unreadCounts[r.id] > 99 ? '99+' : unreadCounts[r.id]}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
-        {rooms.map(r => (
-          <div 
-            key={r.id} 
-            className={`room-item ${activeRoomId === r.id ? 'active' : ''}`}
-            onClick={() => {
-              setActiveChat(r.id, null);
-              markAsRead(r.id);
-              setUnreadCounts(prev => { const n = {...prev}; delete n[r.id]; return n; });
-            }}
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <span># {r.name}</span>
-            {unreadCounts[r.id] > 0 && (
-              <span style={{ background: '#ff4d4f', color: '#fff', borderRadius: '50%', minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', padding: '0 4px' }}>
-                {unreadCounts[r.id] > 99 ? '99+' : unreadCounts[r.id]}
-              </span>
-            )}
-          </div>
-        ))}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', marginBottom: '10px' }}>
-          <h4 style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => setShowContacts(!showContacts)}>
+        {/* Accordion My Contacts */}
+        <div 
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', marginBottom: '10px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '5px' }}
+          onClick={toggleContacts}
+        >
+          <h4 style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             {showContacts ? '▼' : '▶'} My Contacts
           </h4>
-          <button className="small-action" onClick={() => setShowFriendsModal(true)}>Manage</button>
+          <button className="small-action" onClick={e => { e.stopPropagation(); setShowFriendsModal(true); }}>Manage</button>
         </div>
 
-        {showContacts && friends.map(f => (
-          <div 
-            key={f.id} 
-            className={`room-item ${activeRecipientId === f.id ? 'active' : ''}`}
-            onClick={() => {
-              setActiveChat(null, f.id);
-              setUnreadCounts(prev => { const n = {...prev}; delete n[f.id]; return n; });
-            }}
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                background: presence[f.id] === 'active' ? '#52c41a' : presence[f.id] === 'afk' ? '#faad14' : '#555' 
-              }} />
-              <span>@ {f.username}</span>
-            </div>
-            {unreadCounts[f.id] > 0 && (
-              <span style={{ background: '#ff4d4f', color: '#fff', borderRadius: '50%', minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', padding: '0 4px' }}>
-                {unreadCounts[f.id] > 99 ? '99+' : unreadCounts[f.id]}
-              </span>
-            )}
+        {showContacts && (
+          <div style={{ maxHeight: '40vh', overflowY: 'auto' }}>
+            {friends.length === 0 && <div style={{ fontSize: '12px', opacity: 0.5, textAlign: 'center', padding: '10px' }}>No contacts added</div>}
+            {friends.map(f => (
+              <div 
+                key={f.id} 
+                className={`room-item ${activeRecipientId === f.id ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveChat(null, f.id);
+                  setUnreadCounts(prev => { const n = {...prev}; delete n[f.id]; return n; });
+                }}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ 
+                    width: '8px', 
+                    height: '8px', 
+                    borderRadius: '50%', 
+                    background: presence[f.id] === 'active' ? '#52c41a' : presence[f.id] === 'afk' ? '#faad14' : '#555' 
+                  }} />
+                  <span>@ {f.username}</span>
+                </div>
+                {unreadCounts[f.id] > 0 && (
+                  <span style={{ background: '#ff4d4f', color: '#fff', borderRadius: '50%', minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', padding: '0 4px' }}>
+                    {unreadCounts[f.id] > 99 ? '99+' : unreadCounts[f.id]}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
+
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
 
       {showFriendsModal && (
         <FriendsModal onClose={() => {
@@ -294,3 +329,4 @@ export default function Sidebar() {
     </div>
   );
 }
+

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../utils/prisma';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authMiddleware';
+import { getAggregatedStatus } from '../utils/presence';
 
 const router = Router();
 
@@ -22,7 +23,12 @@ router.get('/users', async (req: AuthRequest, res) => {
       },
       orderBy: { createdAt: 'desc' }
     });
-    res.json(users);
+    const usersWithPresence = users.map(u => ({
+      ...u,
+      presence: getAggregatedStatus(u.id)
+    }));
+    
+    res.json(usersWithPresence);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
