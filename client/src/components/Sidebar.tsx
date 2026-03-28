@@ -15,6 +15,8 @@ export default function Sidebar() {
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [showExplorer, setShowExplorer] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomDescription, setNewRoomDescription] = useState('');
+  const [newRoomIsPrivate, setNewRoomIsPrivate] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [presence, setPresence] = useState<Record<string, 'active' | 'afk' | 'offline'>>({});
 
@@ -143,13 +145,19 @@ export default function Sidebar() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}` 
         },
-        body: JSON.stringify({ name: newRoomName }),
+        body: JSON.stringify({ 
+          name: newRoomName,
+          description: newRoomDescription,
+          isPrivate: newRoomIsPrivate
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setRooms([...rooms, data]);
         setActiveChat(data.id, null);
         setNewRoomName('');
+        setNewRoomDescription('');
+        setNewRoomIsPrivate(false);
         setIsCreating(false);
       } else {
         alert(data.error);
@@ -188,15 +196,29 @@ export default function Sidebar() {
         </div>
         
         {isCreating && (
-          <form onSubmit={handleCreateRoom} style={{ marginBottom: '15px' }}>
+          <form onSubmit={handleCreateRoom} style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <input 
               type="text" 
               placeholder="Room Name..." 
               value={newRoomName}
               onChange={e => setNewRoomName(e.target.value)}
-              style={{ width: '100%', padding: '8px', marginBottom: '5px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white' }}
+              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white' }}
               autoFocus
             />
+            <textarea 
+              placeholder="Description (optional)" 
+              value={newRoomDescription}
+              onChange={e => setNewRoomDescription(e.target.value)}
+              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white', resize: 'none', height: '60px', fontSize: '12px' }}
+            />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={newRoomIsPrivate}
+                onChange={e => setNewRoomIsPrivate(e.target.checked)}
+              />
+              Private Room
+            </label>
             <button type="submit" className="small-action" style={{ width: '100%' }}>Create</button>
           </form>
         )}

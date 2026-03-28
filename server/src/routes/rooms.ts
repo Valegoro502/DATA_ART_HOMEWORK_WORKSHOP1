@@ -72,6 +72,12 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       }
     });
 
+    // Dynamically join the socket room
+    const io = req.app.get('io');
+    if (io) {
+      io.in(`user:${userId}`).socketsJoin(`room:${room.id}`);
+    }
+
     res.status(201).json(room);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -183,6 +189,12 @@ router.post('/:roomId/join', authenticate, async (req: AuthRequest, res) => {
       }
     });
 
+    // Dynamically join the socket room
+    const io = req.app.get('io');
+    if (io) {
+      io.in(`user:${userId}`).socketsJoin(`room:${roomId}`);
+    }
+
     res.json({ message: 'Joined successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Server error or already joined' });
@@ -205,6 +217,12 @@ router.post('/:roomId/leave', authenticate, async (req: AuthRequest, res) => {
     await prisma.roomMember.delete({
       where: { roomId_userId: { roomId, userId } }
     });
+
+    // Dynamically leave the socket room
+    const io = req.app.get('io');
+    if (io) {
+      io.in(`user:${userId}`).socketsLeave(`room:${roomId}`);
+    }
 
     res.json({ message: 'Left room' });
   } catch (error) {
@@ -319,6 +337,12 @@ router.post('/:roomId/invite', authenticate, async (req: AuthRequest, res) => {
       data: { roomId, userId: targetUser.id, role: 'MEMBER' }
     });
 
+    // Dynamically join the socket room for the invited user
+    const io = req.app.get('io');
+    if (io) {
+      io.in(`user:${targetUser.id}`).socketsJoin(`room:${roomId}`);
+    }
+
     res.json({ message: 'User invited successfully' });
   } catch (error) {
     console.error(error);
@@ -355,6 +379,12 @@ router.post('/:roomId/remove-member', authenticate, async (req: AuthRequest, res
     await prisma.roomMember.delete({
       where: { roomId_userId: { roomId, userId: targetUserId } }
     });
+
+    // Dynamically leave the socket room for the removed user
+    const io = req.app.get('io');
+    if (io) {
+      io.in(`user:${targetUserId}`).socketsLeave(`room:${roomId}`);
+    }
 
     res.json({ message: 'Member removed' });
   } catch (error) {

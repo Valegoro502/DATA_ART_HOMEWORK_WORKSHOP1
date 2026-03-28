@@ -64,6 +64,21 @@ seedAdmin();
 // Socket logic
 const activeUsers = new Map<string, Set<string>>(); // userId -> set of socketIds
 const socketToUser = new Map<string, string>(); // socketId -> userId
+const socketStatus = new Map<string, 'active' | 'afk'>(); // socketId -> status
+
+function getAggregatedStatus(userId: string): 'active' | 'afk' | 'offline' {
+  const socketIds = activeUsers.get(userId);
+  if (!socketIds || socketIds.size === 0) return 'offline';
+
+  let allAfk = true;
+  for (const sid of socketIds) {
+    if (socketStatus.get(sid) === 'active') {
+      allAfk = false;
+      break;
+    }
+  }
+  return allAfk ? 'afk' : 'active';
+}
 
 io.use(async (socket, next) => {
   try {
@@ -91,9 +106,10 @@ io.on('connection', (socket: Socket) => {
   
   if (!activeUsers.has(userId)) activeUsers.set(userId, new Set());
   activeUsers.get(userId)!.add(socket.id);
+  socketStatus.set(socket.id, 'active'); // Default to active on first connect
 
   // Broadcast presence
-  io.emit('user:presence', { userId, status: 'online' });
+  io.emit('user:presence', { userId, status: 'active' });
 
   // Join user's rooms for events
   prisma.roomMember.findMany({ where: { userId } }).then(memberships => {
@@ -104,20 +120,30 @@ io.on('connection', (socket: Socket) => {
   socket.join(`user:${userId}`);
 
   // Heartbeat / AFK handling
-  let pingTimeout: NodeJS.Timeout;
   socket.on('presence:ping', (status: 'active' | 'afk') => {
-    // Collect status from all sockets to find max status for user
-    // Very simplified logic here for assignment demonstration.
-    io.emit('user:presence', { userId, status });
+    const oldStatus = getAggregatedStatus(userId);
+    socketStatus.set(socket.id, status);
+    const newStatus = getAggregatedStatus(userId);
+
+    if (oldStatus !== newStatus) {
+      io.emit('user:presence', { userId, status: newStatus });
+    }
   });
 
   socket.on('disconnect', () => {
     const set = activeUsers.get(userId);
     if (set) {
+      const oldStatus = getAggregatedStatus(userId);
       set.delete(socket.id);
+      socketStatus.delete(socket.id);
+      
+      const newStatus = getAggregatedStatus(userId);
+      if (newStatus !== oldStatus) {
+        io.emit('user:presence', { userId, status: newStatus });
+      }
+
       if (set.size === 0) {
         activeUsers.delete(userId);
-        io.emit('user:presence', { userId, status: 'offline' });
       }
     }
     socketToUser.delete(socket.id);

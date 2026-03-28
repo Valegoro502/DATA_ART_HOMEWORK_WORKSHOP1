@@ -115,6 +115,12 @@ router.delete('/rooms/:roomId', async (req: AuthRequest, res) => {
       where: { id: roomId }
     });
     
+    // Clear all socket memberships for this room
+    const io = req.app.get('io');
+    if (io) {
+      io.socketsLeave(`room:${roomId}`);
+    }
+
     res.json({ message: 'Room deleted successfully' });
   } catch (err) {
     console.error(err);
