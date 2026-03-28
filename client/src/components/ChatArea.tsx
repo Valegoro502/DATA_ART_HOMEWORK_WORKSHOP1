@@ -123,26 +123,46 @@ export default function ChatArea() {
 
   // Listen for real-time new messages via socket
   useEffect(() => {
-    const socket = socketService.socket;
-    if (!socket) return;
+    // Retry until socket is ready
+    const tryRegister = (): (() => void) | null => {
+      const socket = socketService.socket;
+      if (!socket) return null;
 
-    const handleNewMessage = (message: any) => {
-      // Only add if it belongs to the current active chat
-      const isCurrentRoom = activeRoomId && message.roomId === activeRoomId;
-      const isCurrentDM = activeRecipientId && !message.roomId && (
-        message.senderId === activeRecipientId || message.recipientId === activeRecipientId
-      );
-      if (isCurrentRoom || isCurrentDM) {
-        setMessages(prev => {
-          // Deduplicate: don't add if we already have this ID
-          if (prev.some(m => m.id === message.id)) return prev;
-          return [...prev, message];
-        });
-      }
+      const handleNewMessage = (message: any) => {
+        // Only add if it belongs to the current active chat
+        const isCurrentRoom = activeRoomId && message.roomId === activeRoomId;
+        const isCurrentDM = activeRecipientId && !message.roomId && (
+          message.senderId === activeRecipientId || message.recipientId === activeRecipientId
+        );
+        if (isCurrentRoom || isCurrentDM) {
+          setMessages(prev => {
+            // Deduplicate: don't add if we already have this ID
+            if (prev.some(m => m.id === message.id)) return prev;
+            return [...prev, message];
+          });
+        }
+      };
+
+      socket.on('message:new', handleNewMessage);
+      return () => { socket.off('message:new', handleNewMessage); };
     };
 
-    socket.on('message:new', handleNewMessage);
-    return () => { socket.off('message:new', handleNewMessage); };
+    let cleanup = tryRegister();
+    let interval: any = null;
+    if (!cleanup) {
+      interval = setInterval(() => {
+        const result = tryRegister();
+        if (result) {
+          cleanup = result;
+          clearInterval(interval);
+        }
+      }, 300);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+      if (cleanup) cleanup();
+    };
   }, [activeRoomId, activeRecipientId]);
 
   const handleInvite = async () => {
