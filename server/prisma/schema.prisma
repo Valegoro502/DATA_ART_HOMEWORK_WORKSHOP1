@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String       @id @default(uuid())
+  email            String       @unique
+  username         String       @unique
+  passwordHash     String
+  createdAt        DateTime     @default(now())
+  sessions         Session[]
+  ownedRooms       Room[]       @relation("OwnedRooms")
+  roomMembers      RoomMember[]
+  messagesSent     Message[]    @relation("Sender")
+  messagesReceived Message[]    @relation("Recipient")
+  friendsRequested Friendship[] @relation("User1")
+  friendsReceived  Friendship[] @relation("User2")
+  bansIssued       UserBan[]    @relation("Banner")
+  bannedBy         UserBan[]    @relation("Banned")
+  roomBansIssued   RoomBan[]    @relation("RoomBanner")
+  roomBans         RoomBan[]    @relation("RoomBannedUser")
+}
+
+model Session {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token              String   @unique
+  browserFingerprint String?
+  ipAddress          String?
+  lastActive         DateTime @default(now())
+  createdAt          DateTime @default(now())
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+model Friendship {
+  id        String           @id @default(uuid())
+  user1Id   String
+  user2Id   String
+  status    FriendshipStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  user1     User             @relation("User1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2     User             @relation("User2", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  @@unique([user1Id, user2Id])
+}
+
+model UserBan {
+  id        String   @id @default(uuid())
+  bannerId  String
+  bannedId  String
+  createdAt DateTime @default(now())
+  banner    User     @relation("Banner", fields: [bannerId], references: [id], onDelete: Cascade)
+  banned    User     @relation("Banned", fields: [bannedId], references: [id], onDelete: Cascade)
+
+  @@unique([bannerId, bannedId])
+}
+
+model Room {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+  isPrivate   Boolean      @default(false)
+  ownerId     String
+  owner       User         @relation("OwnedRooms", fields: [ownerId], references: [id])
+  createdAt   DateTime     @default(now())
+  members     RoomMember[]
+  bans        RoomBan[]
+  messages    Message[]
+}
+
+enum RoomRole {
+  MEMBER
+  ADMIN
+}
+
+model RoomMember {
+  id        String   @id @default(uuid())
+  roomId    String
+  userId    String
+  role      RoomRole @default(MEMBER)
+  joinedAt  DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model RoomBan {
+  id         String   @id @default(uuid())
+  roomId     String
+  userId     String
+  bannerId   String
+  createdAt  DateTime @default(now())
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user       User     @relation("RoomBannedUser", fields: [userId], references: [id], onDelete: Cascade)
+  banner     User     @relation("RoomBanner", fields: [bannerId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  roomId         String?  // Null means it's a personal message
+  recipientId    String?  // Used for personal messages
+  senderId       String
+  content        String   @db.Text
+  attachmentUrl  String?
+  attachmentName String?
+  replyToId      String?
+  isEdited       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  room      Room?    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender    User     @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User?    @relation("Recipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  replyTo   Message? @relation("Replies", fields: [replyToId], references: [id])
+  replies   Message[] @relation("Replies")
+}

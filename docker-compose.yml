@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:15-alpine
+    container_name: chat-db
+    environment:
+      POSTGRES_USER: chatuser
+      POSTGRES_PASSWORD: chatpassword
+      POSTGRES_DB: chatdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: chat-server
+    depends_on:
+      - database
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://chatuser:chatpassword@database:5432/chatdb?schema=public
+      - JWT_SECRET=supersecret123
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - chat_uploads:/app/uploads
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: chat-client
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+  chat_uploads:
