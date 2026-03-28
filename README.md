@@ -25,15 +25,7 @@ docker compose up --build
 - The Backend API will be available at `http://localhost:3000`.
 - The Database will run on `localhost:5432`.
 
-## Deployment to GitHub
+## Admin password
 
-To submit this assignment, push this directory to a public GitHub repository:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit - Web Chat implementation"
-git branch -M main
-git remote add origin <YOUR_GITHUB_REPO_URL>
-git push -u origin main
-```
+Email: admin@gmail.com
+Password: admin
