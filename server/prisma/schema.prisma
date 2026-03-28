@@ -48,9 +48,10 @@ enum FriendshipStatus {
 model Friendship {
   id        String           @id @default(uuid())
   user1Id   String
-  user2Id   String
-  status    FriendshipStatus @default(PENDING)
-  createdAt DateTime         @default(now())
+  user2Id      String
+  status       FriendshipStatus @default(PENDING)
+  initiatorId  String?
+  createdAt    DateTime         @default(now())
   user1     User             @relation("User1", fields: [user1Id], references: [id], onDelete: Cascade)
   user2     User             @relation("User2", fields: [user2Id], references: [id], onDelete: Cascade)
 

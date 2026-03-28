@@ -1,27 +1,36 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useChatStore } from '../store/useChatStore';
+import FriendsModal from './FriendsModal';
 
 export default function Sidebar() {
   const { user, token, logout } = useAuthStore();
-  const { activeRoomId, setActiveChat } = useChatStore();
+  const { activeRoomId, activeRecipientId, setActiveChat } = useChatStore();
   const [rooms, setRooms] = useState<any[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [showContacts, setShowContacts] = useState(true);
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
 
   useEffect(() => {
-    const fetchRooms = async () => {
+    const fetchRoomsAndFriends = async () => {
       try {
-        const res = await fetch(`http://${window.location.hostname}:3000/api/rooms/my-rooms`, {
+        const resRooms = await fetch(`http://${window.location.hostname}:3000/api/rooms/my-rooms`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        const data = await res.json();
-        if (res.ok) setRooms(data);
+        if (resRooms.ok) setRooms(await resRooms.json());
+
+        const resFriends = await fetch(`http://${window.location.hostname}:3000/api/users/friends`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (resFriends.ok) setFriends(await resFriends.json());
+
       } catch (e) {
         console.error(e);
       }
     };
-    fetchRooms();
+    fetchRoomsAndFriends();
   }, [token]);
 
   const handleCreateRoom = async (e: React.FormEvent) => {
@@ -99,7 +108,26 @@ export default function Sidebar() {
             # {r.name}
           </div>
         ))}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', marginBottom: '10px' }}>
+          <h4 style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => setShowContacts(!showContacts)}>
+            {showContacts ? '▼' : '▶'} My Contacts
+          </h4>
+          <button className="small-action" onClick={() => setShowFriendsModal(true)}>Manage</button>
+        </div>
+
+        {showContacts && friends.map(f => (
+          <div 
+            key={f.id} 
+            className={`room-item ${activeRecipientId === f.id ? 'active' : ''}`}
+            onClick={() => setActiveChat(null, f.id)}
+          >
+            @ {f.username}
+          </div>
+        ))}
       </div>
+
+      {showFriendsModal && <FriendsModal onClose={() => setShowFriendsModal(false)} />}
     </div>
   );
 }

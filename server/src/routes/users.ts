@@ -79,9 +79,8 @@ router.post('/:recipientId/friend-request', authenticate, async (req: AuthReques
       create: {
         user1Id: existingId,
         user2Id: existingId2,
-        status: 'PENDING'
-        // In real app, track who initiated, here simply creating pending bidirectional
-        // For simplicity we let receiver accept it or sender can cancel
+        status: 'PENDING',
+        initiatorId: userId
       },
       update: {}
     });
@@ -109,6 +108,123 @@ router.post('/:senderId/accept', authenticate, async (req: AuthRequest, res) => 
     res.json({ message: 'Request accepted' });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get Pending Requests (Received)
+router.get('/pending-requests', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const requests = await prisma.friendship.findMany({
+      where: {
+        status: 'PENDING',
+        OR: [{ user1Id: userId }, { user2Id: userId }],
+        initiatorId: { not: userId }
+      },
+      include: { user1: { select: { id: true, username: true } }, user2: { select: { id: true, username: true } } }
+    });
+    
+    const mapped = requests.map(r => r.user1Id === userId ? r.user2 : r.user1);
+    res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Remove Friend or Cancel Request
+router.delete('/friends/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const targetId = req.params.id;
+    const existingId = userId < targetId ? userId : targetId;
+    const existingId2 = userId < targetId ? targetId : userId;
+    
+    await prisma.friendship.deleteMany({
+      where: { user1Id: existingId, user2Id: existingId2 }
+    });
+    res.json({ message: 'Removed' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Block user 1-to-1
+router.post('/:id/block', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const bannerId = req.user!.id;
+    const bannedId = req.params.id;
+    if (bannerId === bannedId) return res.status(400).json({ error: 'Cannot block yourself' });
+    
+    await prisma.userBan.upsert({
+      where: { bannerId_bannedId: { bannerId, bannedId } },
+      create: { bannerId, bannedId },
+      update: {}
+    });
+
+    const existingId = bannerId < bannedId ? bannerId : bannedId;
+    const existingId2 = bannerId < bannedId ? bannedId : bannerId;
+    await prisma.friendship.deleteMany({
+      where: { user1Id: existingId, user2Id: existingId2 }
+    });
+    
+    res.json({ message: 'User blocked' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error adding block' });
+  }
+});
+
+// Unblock user 1-to-1
+router.post('/:id/unblock', authenticate, async (req: AuthRequest, res) => {
+  try {
+    await prisma.userBan.deleteMany({
+      where: { bannerId: req.user!.id, bannedId: req.params.id }
+    });
+    res.json({ message: 'User unblocked' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get Personal Messages
+router.get('/:recipientId/messages', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { recipientId } = req.params;
+    const userId = req.user!.id;
+    const { cursor, limit = 50 } = req.query;
+
+    let takeVal = Number(limit);
+    if (takeVal > 100) takeVal = 100;
+
+    const messages = await prisma.message.findMany({
+      where: {
+        roomId: null,
+        OR: [
+          { senderId: userId, recipientId: recipientId },
+          { senderId: recipientId, recipientId: userId }
+        ]
+      },
+      take: takeVal,
+      skip: cursor ? 1 : 0,
+      cursor: cursor ? { id: cursor as string } : undefined,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        sender: { select: { id: true, username: true } },
+        replyTo: { select: { id: true, content: true, sender: { select: { username: true } } } }
+      }
+    });
+
+    const block = await prisma.userBan.findFirst({
+      where: {
+        OR: [
+          { bannerId: userId, bannedId: recipientId },
+          { bannerId: recipientId, bannedId: userId }
+        ]
+      }
+    });
+
+    res.json({ messages: messages.reverse(), isBlocked: !!block });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error fetching personal messages' });
   }
 });
 

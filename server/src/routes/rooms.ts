@@ -266,6 +266,20 @@ router.post('/:roomId/invite', authenticate, async (req: AuthRequest, res) => {
     const targetUser = await prisma.user.findUnique({ where: { username } });
     if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
+    // Check if there is a block between the inviter and the target
+    const block = await prisma.userBan.findFirst({
+      where: {
+        OR: [
+          { bannerId: req.user!.id, bannedId: targetUser.id },
+          { bannerId: targetUser.id, bannedId: req.user!.id }
+        ]
+      }
+    });
+
+    if (block) {
+      return res.status(403).json({ error: 'Cannot invite this user due to an active block.' });
+    }
+
     const existingMembership = await prisma.roomMember.findUnique({
       where: { roomId_userId: { roomId, userId: targetUser.id } }
     });
@@ -279,6 +293,43 @@ router.post('/:roomId/invite', authenticate, async (req: AuthRequest, res) => {
     });
 
     res.json({ message: 'User invited successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Remove Member
+router.post('/:roomId/remove-member', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { roomId } = req.params;
+    const { targetUserId } = req.body;
+    const userId = req.user!.id;
+
+    const room = await prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+
+    const inviterMembership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId } }
+    });
+
+    // Determine permissions (Owner or Admin or Global Admin)
+    const canRemove = req.user!.isGlobalAdmin || room.ownerId === userId || inviterMembership?.role === 'ADMIN';
+
+    if (!canRemove) {
+      return res.status(403).json({ error: 'Only admins or owners can remove members' });
+    }
+
+    // Protect owners from being removed
+    if (targetUserId === room.ownerId) {
+      return res.status(400).json({ error: 'Cannot remove the room owner' });
+    }
+
+    await prisma.roomMember.delete({
+      where: { roomId_userId: { roomId, userId: targetUserId } }
+    });
+
+    res.json({ message: 'Member removed' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error' });

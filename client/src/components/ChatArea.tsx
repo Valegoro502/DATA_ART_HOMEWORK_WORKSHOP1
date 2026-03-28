@@ -2,31 +2,58 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useChatStore } from '../store/useChatStore';
 import { socketService } from '../lib/socket';
+import RoomMembersModal from './RoomMembersModal';
 
 export default function ChatArea() {
   const { user, token } = useAuthStore();
-  const { activeRoomId } = useChatStore();
+  const { activeRoomId, activeRecipientId } = useChatStore();
   const [messages, setMessages] = useState<any[]>([]);
+  const [roomContext, setRoomContext] = useState<any>(null);
+  const [showMembers, setShowMembers] = useState(false);
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const fetchRoomContext = async () => {
     if (!activeRoomId) return;
-
-    fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/messages`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setMessages(data);
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/context`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
+      if (res.ok) setRoomContext(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-    // We should listen to a chat specific event from socket here. For simplicity:
-    // This requires backend emit something like io.to(roomId).emit('message:new', message)
-  }, [activeRoomId, token]);
+  useEffect(() => {
+    setRoomContext(null);
+    if (activeRoomId) {
+      fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) setMessages(data);
+        });
+        
+      fetchRoomContext();
+    } else if (activeRecipientId) {
+      fetch(`http://${window.location.hostname}:3000/api/users/${activeRecipientId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.messages && Array.isArray(data.messages)) {
+            setMessages(data.messages);
+            setIsBlocked(data.isBlocked);
+          }
+        });
+    }
+  }, [activeRoomId, activeRecipientId, token]);
 
   // Auto-scroll logic could be here:
   useEffect(() => {
@@ -59,7 +86,7 @@ export default function ChatArea() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!text.trim() && !attachment) || !activeRoomId || isUploading) return;
+    if ((!text.trim() && !attachment) || (!activeRoomId && !activeRecipientId) || isUploading) return;
 
     try {
       let attachmentUrl = null;
@@ -94,7 +121,8 @@ export default function ChatArea() {
           Authorization: `Bearer ${token}` 
         },
         body: JSON.stringify({ 
-          roomId: activeRoomId, 
+          roomId: activeRoomId || undefined,
+          recipientId: activeRecipientId || undefined,
           content: text.trim() ? text : null,
           attachmentUrl,
           attachmentName
@@ -103,7 +131,7 @@ export default function ChatArea() {
       const data = await res.json();
       if (res.ok) {
         setMessages([...messages, data]);
-        socketService.socket?.emit('chat:send', { roomId: activeRoomId, message: data });
+        socketService.socket?.emit('chat:send', { roomId: activeRoomId, recipientId: activeRecipientId, message: data });
         setText('');
         setAttachment(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -178,7 +206,7 @@ export default function ChatArea() {
     );
   };
 
-  if (!activeRoomId) {
+  if (!activeRoomId && !activeRecipientId) {
     return (
       <div className="chat-area empty-state">
         <div className="glass-panel help-text">
@@ -191,13 +219,16 @@ export default function ChatArea() {
   return (
     <div className="chat-area">
       <div className="chat-header glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3>Room Messages</h3>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="small-action" onClick={handleInvite}>Invite User</button>
-          {user?.isGlobalAdmin && (
-            <button className="small-action" style={{ background: '#ff4d4f' }} onClick={handleDeleteRoom}>Delete Room</button>
-          )}
-        </div>
+        <h3>{activeRoomId ? `Room Messages: ${roomContext?.name || ''}` : 'Private Conversation'}</h3>
+        {activeRoomId && (
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="small-action" onClick={() => setShowMembers(true)}>Members</button>
+            <button className="small-action" onClick={handleInvite}>Invite User</button>
+            {(user?.isGlobalAdmin || roomContext?.ownerId === user?.id) && (
+              <button className="small-action" style={{ background: '#ff4d4f' }} onClick={handleDeleteRoom}>Delete Room</button>
+            )}
+          </div>
+        )}
       </div>
       
       <div className="chat-messages" ref={scrollRef}>
@@ -205,7 +236,7 @@ export default function ChatArea() {
           <div key={msg.id} className={`message ${msg.senderId === user?.id ? 'mine' : 'theirs'}`}>
             <div className="message-sender" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>{msg.sender.username}</span>
-              {(user?.isGlobalAdmin || msg.senderId === user?.id) && (
+              {(user?.isGlobalAdmin || roomContext?.ownerId === user?.id || msg.senderId === user?.id) && (
                 <button 
                   onClick={() => handleDeleteMessage(msg.id)}
                   style={{ background: 'transparent', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: '12px', padding: '0 5px' }}
@@ -245,17 +276,25 @@ export default function ChatArea() {
           />
           <input 
             type="text" 
-            placeholder="Type a message..." 
+            placeholder={isBlocked ? "You cannot reply to this conversation" : "Type a message..."} 
             value={text} 
             onChange={e => setText(e.target.value)} 
-            disabled={isUploading}
-            style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #333', background: '#222', color: '#fff' }}
+            disabled={isUploading || isBlocked}
+            style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #333', background: isBlocked ? '#111' : '#222', color: isBlocked ? '#555' : '#fff' }}
           />
-          <button type="submit" disabled={isUploading || (!text.trim() && !attachment)}>
+          <button type="submit" disabled={isUploading || isBlocked || (!text.trim() && !attachment)}>
             {isUploading ? 'Sending...' : 'Send'}
           </button>
         </form>
       </div>
+
+      {showMembers && roomContext && (
+        <RoomMembersModal 
+          roomContext={roomContext} 
+          onClose={() => setShowMembers(false)}
+          onMemberRemoved={fetchRoomContext}
+        />
+      )}
     </div>
   );
 }
