@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useChatStore } from '../store/useChatStore';
+import { socketService } from '../lib/socket';
 import FriendsModal from './FriendsModal';
+import RoomExplorerModal from './RoomExplorerModal';
 
 export default function Sidebar() {
   const { user, token, logout } = useAuthStore();
@@ -11,7 +13,10 @@ export default function Sidebar() {
   const [isCreating, setIsCreating] = useState(false);
   const [showContacts, setShowContacts] = useState(true);
   const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [showExplorer, setShowExplorer] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [presence, setPresence] = useState<Record<string, 'active' | 'afk' | 'offline'>>({});
 
   const fetchFriends = async () => {
     try {
@@ -24,20 +29,108 @@ export default function Sidebar() {
     }
   };
 
+  // Helper: keys for localStorage
+  const lastSeenKey = (id: string) => `lastSeen:${user?.id}:${id}`;
+  const getLastSeen = (id: string): string => localStorage.getItem(lastSeenKey(id)) || new Date(0).toISOString();
+  const markAsRead = (id: string) => localStorage.setItem(lastSeenKey(id), new Date().toISOString());
+
+  const fetchRooms = async () => {
+    try {
+      const resRooms = await fetch(`http://${window.location.hostname}:3000/api/rooms/my-rooms`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!resRooms.ok) return;
+      const roomList = await resRooms.json();
+      setRooms(roomList);
+
+      // Fetch persistent unread counts for each room
+      const counts: Record<string, number> = {};
+      await Promise.all(roomList.map(async (r: any) => {
+        const since = getLastSeen(r.id);
+        try {
+          const res = await fetch(
+            `http://${window.location.hostname}:3000/api/rooms/${r.id}/unread-count?since=${encodeURIComponent(since)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (res.ok) {
+            const { count } = await res.json();
+            if (count > 0) counts[r.id] = count;
+          }
+        } catch (e) { /* ignore */ }
+      }));
+      setUnreadCounts(prev => ({ ...prev, ...counts }));
+
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
-    const fetchRooms = async () => {
-      try {
-        const resRooms = await fetch(`http://${window.location.hostname}:3000/api/rooms/my-rooms`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (resRooms.ok) setRooms(await resRooms.json());
-      } catch (e) {
-        console.error(e);
-      }
-    };
     fetchRooms();
     fetchFriends();
   }, [token]);
+
+  // Use refs so the socket listener always reads fresh values (no stale closure)
+  const activeRoomRef = useRef(activeRoomId);
+  const activeRecipientRef = useRef(activeRecipientId);
+  useEffect(() => { activeRoomRef.current = activeRoomId; }, [activeRoomId]);
+  useEffect(() => { activeRecipientRef.current = activeRecipientId; }, [activeRecipientId]);
+
+  // Listen for ALL incoming messages to track unread counts
+  useEffect(() => {
+    // Retry until socket is ready
+    const tryRegister = (): (() => void) | null => {
+      const socket = socketService.socket;
+      if (!socket) return null;
+
+      const handleNewMessage = (message: any) => {
+        const curRoom = activeRoomRef.current;
+        const curRecipient = activeRecipientRef.current;
+
+        let key: string | null = null;
+        if (message.roomId && message.roomId !== curRoom) {
+          key = message.roomId;
+        } else if (!message.roomId && message.senderId !== curRecipient) {
+          key = message.senderId;
+        }
+        if (key) {
+          setUnreadCounts(prev => ({ ...prev, [key!]: (prev[key!] || 0) + 1 }));
+        }
+      };
+
+      socket.on('message:new', handleNewMessage);
+      return () => { socket.off('message:new', handleNewMessage); };
+    };
+
+    let cleanup: (() => void) | null = tryRegister();
+    // If socket wasn't ready, poll every 300ms until it is
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (!cleanup) {
+      interval = setInterval(() => {
+        const result = tryRegister();
+        if (result) {
+          cleanup = result;
+          if (interval) clearInterval(interval);
+        }
+      }, 300);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+      if (cleanup) cleanup();
+    };
+  }, []); // register once, use refs for fresh values
+
+  // Presence listener
+  useEffect(() => {
+    const handlePresence = (e: any) => {
+      const { userId, status } = e.detail;
+      setPresence(prev => ({ ...prev, [userId]: status === 'online' ? 'active' : status }));
+    };
+
+    window.addEventListener('presence-update', handlePresence);
+    return () => window.removeEventListener('presence-update', handlePresence);
+  }, []);
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,7 +181,10 @@ export default function Sidebar() {
       <div className="room-list">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <h4>My Rooms</h4>
-          <button className="small-action" onClick={() => setIsCreating(!isCreating)}>+</button>
+          <div style={{ display: 'flex', gap: '5px' }}>
+            <button className="small-action" onClick={() => setShowExplorer(true)}>Explore</button>
+            <button className="small-action" onClick={() => setIsCreating(!isCreating)}>+</button>
+          </div>
         </div>
         
         {isCreating && (
@@ -109,9 +205,19 @@ export default function Sidebar() {
           <div 
             key={r.id} 
             className={`room-item ${activeRoomId === r.id ? 'active' : ''}`}
-            onClick={() => setActiveChat(r.id, null)}
+            onClick={() => {
+              setActiveChat(r.id, null);
+              markAsRead(r.id);
+              setUnreadCounts(prev => { const n = {...prev}; delete n[r.id]; return n; });
+            }}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           >
-            # {r.name}
+            <span># {r.name}</span>
+            {unreadCounts[r.id] > 0 && (
+              <span style={{ background: '#ff4d4f', color: '#fff', borderRadius: '50%', minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', padding: '0 4px' }}>
+                {unreadCounts[r.id] > 99 ? '99+' : unreadCounts[r.id]}
+              </span>
+            )}
           </div>
         ))}
 
@@ -126,9 +232,26 @@ export default function Sidebar() {
           <div 
             key={f.id} 
             className={`room-item ${activeRecipientId === f.id ? 'active' : ''}`}
-            onClick={() => setActiveChat(null, f.id)}
+            onClick={() => {
+              setActiveChat(null, f.id);
+              setUnreadCounts(prev => { const n = {...prev}; delete n[f.id]; return n; });
+            }}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
           >
-            @ {f.username}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                background: presence[f.id] === 'active' ? '#52c41a' : presence[f.id] === 'afk' ? '#faad14' : '#555' 
+              }} />
+              <span>@ {f.username}</span>
+            </div>
+            {unreadCounts[f.id] > 0 && (
+              <span style={{ background: '#ff4d4f', color: '#fff', borderRadius: '50%', minWidth: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', padding: '0 4px' }}>
+                {unreadCounts[f.id] > 99 ? '99+' : unreadCounts[f.id]}
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -138,6 +261,13 @@ export default function Sidebar() {
           setShowFriendsModal(false);
           fetchFriends();
         }} />
+      )}
+
+      {showExplorer && (
+        <RoomExplorerModal 
+          onClose={() => setShowExplorer(false)} 
+          onJoined={fetchRooms}
+        />
       )}
     </div>
   );

@@ -10,6 +10,9 @@ export default function ChatArea() {
   const [messages, setMessages] = useState<any[]>([]);
   const [roomContext, setRoomContext] = useState<any>(null);
   const [showMembers, setShowMembers] = useState(false);
+  const [replyTo, setReplyTo] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -33,13 +36,18 @@ export default function ChatArea() {
     setRoomContext(null);
     setIsBlocked(false);
     setMessages([]);
+    setHasMore(false);
+    setReplyTo(null);
     if (activeRoomId) {
       fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(r => r.json())
         .then(data => {
-          if (Array.isArray(data)) setMessages(data);
+          if (Array.isArray(data)) {
+            setMessages(data);
+            setHasMore(data.length >= 50);
+          }
         });
         
       fetchRoomContext();
@@ -52,6 +60,7 @@ export default function ChatArea() {
           if (data.messages && Array.isArray(data.messages)) {
             setMessages(data.messages);
             setIsBlocked(data.isBlocked);
+            setHasMore(data.messages.length >= 50);
           }
         });
     }
@@ -63,6 +72,48 @@ export default function ChatArea() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Infinite scroll: load older messages when scrolled to top
+  const handleScroll = async () => {
+    if (!scrollRef.current || isLoadingMore || !hasMore || messages.length === 0) return;
+    if (scrollRef.current.scrollTop > 50) return; // only near top
+
+    const oldestId = messages[0]?.id;
+    if (!oldestId) return;
+
+    setIsLoadingMore(true);
+    const prevHeight = scrollRef.current.scrollHeight;
+
+    try {
+      let url = '';
+      if (activeRoomId) {
+        url = `http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/messages?cursor=${oldestId}&limit=50`;
+      } else if (activeRecipientId) {
+        url = `http://${window.location.hostname}:3000/api/users/${activeRecipientId}/messages?cursor=${oldestId}&limit=50`;
+      }
+      if (!url) return;
+
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const older = activeRoomId ? data : data.messages;
+
+      if (Array.isArray(older) && older.length > 0) {
+        setMessages(prev => [...older, ...prev]);
+        setHasMore(older.length >= 50);
+        // Restore scroll position after prepend
+        requestAnimationFrame(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight - prevHeight;
+          }
+        });
+      } else {
+        setHasMore(false);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setIsLoadingMore(false);
+  };
 
   // Listen for real-time new messages via socket
   useEffect(() => {
@@ -147,6 +198,7 @@ export default function ChatArea() {
       if (text.trim()) body.content = text.trim();
       if (attachmentUrl) body.attachmentUrl = attachmentUrl;
       if (attachmentName) body.attachmentName = attachmentName;
+      if (replyTo) body.replyToId = replyTo.id;
 
       const res = await fetch(`http://${window.location.hostname}:3000/api/messages`, {
         method: 'POST',
@@ -163,6 +215,7 @@ export default function ChatArea() {
         // for both the sender and all other participants.
         setText('');
         setAttachment(null);
+        setReplyTo(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
       } else {
         const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data);
@@ -243,7 +296,11 @@ export default function ChatArea() {
     return (
       <div className="chat-area empty-state">
         <div className="glass-panel help-text">
-          Select a room or start a conversation
+          <div style={{ fontSize: '3rem', marginBottom: '20px' }}>💬</div>
+          <h2>Welcome to DataArt Chat</h2>
+          <p style={{ marginTop: '10px', fontSize: '14px', opacity: 0.8 }}>
+            Select a room from the sidebar or explore public rooms to start messaging!
+          </p>
         </div>
       </div>
     );
@@ -264,21 +321,41 @@ export default function ChatArea() {
         )}
       </div>
       
-      <div className="chat-messages" ref={scrollRef}>
+      <div className="chat-messages" ref={scrollRef} onScroll={handleScroll}>
+        {isLoadingMore && (
+          <div style={{ textAlign: 'center', padding: '8px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>Loading older messages...</div>
+        )}
+        {hasMore && !isLoadingMore && messages.length > 0 && (
+          <div style={{ textAlign: 'center', padding: '8px', color: 'rgba(255,255,255,0.3)', fontSize: '11px' }}>↑ Scroll up for older messages</div>
+        )}
         {messages.map(msg => (
           <div key={msg.id} className={`message ${msg.senderId === user?.id ? 'mine' : 'theirs'}`}>
             <div className="message-sender" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>{msg.sender.username}</span>
-              {(user?.isGlobalAdmin || roomContext?.ownerId === user?.id || msg.senderId === user?.id) && (
-                <button 
-                  onClick={() => handleDeleteMessage(msg.id)}
-                  style={{ background: 'transparent', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: '12px', padding: '0 5px' }}
-                  title="Delete Message"
-                >
-                  ✕
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                {!isBlocked && (
+                  <button
+                    onClick={() => setReplyTo(msg)}
+                    style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: '11px', padding: '0 4px' }}
+                    title="Reply"
+                  >↩</button>
+                )}
+                {(user?.isGlobalAdmin || roomContext?.ownerId === user?.id || msg.senderId === user?.id) && (
+                  <button 
+                    onClick={() => handleDeleteMessage(msg.id)}
+                    style={{ background: 'transparent', border: 'none', color: '#ff4d4f', cursor: 'pointer', fontSize: '12px', padding: '0 5px' }}
+                    title="Delete Message"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
+            {msg.replyTo && (
+              <div style={{ borderLeft: '3px solid rgba(255,255,255,0.3)', paddingLeft: '8px', marginBottom: '4px', color: 'rgba(255,255,255,0.5)', fontSize: '12px', fontStyle: 'italic' }}>
+                <strong>@{msg.replyTo.sender?.username}:</strong> {msg.replyTo.content?.substring(0, 80)}{(msg.replyTo.content?.length ?? 0) > 80 ? '...' : ''}
+              </div>
+            )}
             {msg.content && <div className="message-content" style={{ fontStyle: msg.content === "An administrator has deleted this message." ? 'italic' : 'normal', color: msg.content === "An administrator has deleted this message." ? '#ff4d4f' : 'inherit' }}>{msg.content}</div>}
             {renderAttachment(msg.attachmentUrl, msg.attachmentName)}
           </div>
@@ -286,6 +363,14 @@ export default function ChatArea() {
       </div>
 
       <div className="chat-input glass-panel" style={{ flexShrink: 0 }}>
+        {replyTo && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', padding: '6px 10px', background: 'rgba(255,255,255,0.06)', borderLeft: '3px solid #6be', borderRadius: '4px' }}>
+            <div style={{ flex: 1, fontSize: '12px', color: 'rgba(255,255,255,0.7)' }}>
+              <strong>Replying to @{replyTo.sender?.username}:</strong> {replyTo.content?.substring(0, 60) || '📎 Attachment'}{(replyTo.content?.length ?? 0) > 60 ? '...' : ''}
+            </div>
+            <button type="button" onClick={() => setReplyTo(null)} style={{ background: 'transparent', border: 'none', color: '#ff4d4f', cursor: 'pointer', padding: '0 5px' }}>✕</button>
+          </div>
+        )}
         {attachment && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', padding: '5px 10px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px' }}>
             <span style={{ fontSize: '14px' }}>📎 {attachment.name}</span>

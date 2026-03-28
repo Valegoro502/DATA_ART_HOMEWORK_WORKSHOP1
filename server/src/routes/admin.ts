@@ -87,4 +87,39 @@ router.post('/unban', async (req: AuthRequest, res) => {
   }
 });
 
+// List all rooms for admin
+router.get('/rooms', async (req: AuthRequest, res) => {
+  try {
+    const rooms = await prisma.room.findMany({
+      include: {
+        owner: { select: { username: true } },
+        _count: { select: { members: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(rooms);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete any room
+router.delete('/rooms/:roomId', async (req: AuthRequest, res) => {
+  try {
+    const { roomId } = req.params;
+    
+    // Cascade delete is handled by DB if configured, but let's be safe or just delete.
+    // Prisma schema usually needs to be explicitly set for cascade if not using DB level.
+    // We'll just delete the room; assuming Prisma handles related records if configured.
+    await prisma.room.delete({
+      where: { id: roomId }
+    });
+    
+    res.json({ message: 'Room deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;

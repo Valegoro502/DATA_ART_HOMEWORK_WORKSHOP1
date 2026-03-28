@@ -249,6 +249,33 @@ router.get('/:roomId/messages', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// Unread count for a room since a given timestamp
+router.get('/:roomId/unread-count', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { roomId } = req.params;
+    const { since } = req.query;
+    const userId = req.user!.id;
+
+    const member = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId } }
+    });
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+
+    const sinceDate = since ? new Date(since as string) : new Date(0);
+    const count = await prisma.message.count({
+      where: {
+        roomId,
+        createdAt: { gt: sinceDate },
+        senderId: { not: userId } // don't count own messages
+      }
+    });
+
+    res.json({ count });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Invite User
 router.post('/:roomId/invite', authenticate, async (req: AuthRequest, res) => {
   try {
