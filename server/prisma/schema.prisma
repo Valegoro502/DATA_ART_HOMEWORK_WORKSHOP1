@@ -12,6 +12,8 @@ model User {
   email            String       @unique
   username         String       @unique
   passwordHash     String
+  isGlobalAdmin    Boolean      @default(false)
+  globalBanType    String?
   createdAt        DateTime     @default(now())
   sessions         Session[]
   ownedRooms       Room[]       @relation("OwnedRooms")

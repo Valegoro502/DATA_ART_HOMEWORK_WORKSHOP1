@@ -41,6 +41,10 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const { name, description, isPrivate } = createRoomSchema.parse(req.body);
     const userId = req.user!.id;
 
+    if (req.user!.globalBanType === 'PARTIAL') {
+      return res.status(403).json({ error: 'You are partially banned and cannot create rooms.' });
+    }
+
     const existingInfo = await prisma.room.findUnique({ where: { name } });
     if (existingInfo) {
       return res.status(400).json({ error: 'Room name must be unique' });
@@ -118,6 +122,10 @@ router.get('/:roomId/context', authenticate, async (req: AuthRequest, res) => {
 // Join Room (Public)
 router.post('/:roomId/join', authenticate, async (req: AuthRequest, res) => {
   try {
+    if (req.user!.globalBanType === 'PARTIAL') {
+      return res.status(403).json({ error: 'You are partially banned and cannot join new rooms.' });
+    }
+
     const { roomId } = req.params;
     const userId = req.user!.id;
 
@@ -203,6 +211,42 @@ router.get('/:roomId/messages', authenticate, async (req: AuthRequest, res) => {
 
     res.json(messages.reverse());
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Invite User
+router.post('/:roomId/invite', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { roomId } = req.params;
+    const { username } = req.body;
+    
+    const inviterMembership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId: req.user!.id } }
+    });
+
+    if (!inviterMembership && !req.user!.isGlobalAdmin) {
+      return res.status(403).json({ error: 'You are not a member of this room' });
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { username } });
+    if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+    const existingMembership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId: targetUser.id } }
+    });
+
+    if (existingMembership) {
+      return res.status(400).json({ error: 'User is already in the room' });
+    }
+
+    await prisma.roomMember.create({
+      data: { roomId, userId: targetUser.id, role: 'MEMBER' }
+    });
+
+    res.json({ message: 'User invited successfully' });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Server error' });
   }
 });

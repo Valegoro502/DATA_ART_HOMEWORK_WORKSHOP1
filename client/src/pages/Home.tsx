@@ -3,10 +3,13 @@ import { useAuthStore } from '../store/useAuthStore';
 import { socketService } from '../lib/socket';
 import Sidebar from '../components/Sidebar';
 import ChatArea from '../components/ChatArea';
+import AdminPanel from '../components/AdminPanel';
 import { useNavigate } from 'react-router-dom';
+import { useChatStore } from '../store/useChatStore';
 
 export default function Home() {
   const { token, user } = useAuthStore();
+  const { activeRoomId } = useChatStore();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,7 +30,7 @@ export default function Home() {
   return (
     <div className="home-layout">
       <Sidebar />
-      <ChatArea />
+      {activeRoomId === 'ADMIN_PANEL' ? <AdminPanel /> : <ChatArea />}
     </div>
   );
 }

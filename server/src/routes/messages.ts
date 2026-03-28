@@ -19,6 +19,10 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const { roomId, recipientId, content, attachmentUrl, attachmentName, replyToId } = sendMessageSchema.parse(req.body);
     const senderId = req.user!.id;
 
+    if (req.user!.globalBanType === 'PARTIAL') {
+       return res.status(403).json({ error: 'You are partially banned and cannot send messages.' });
+    }
+
     if (!roomId && !recipientId) {
       return res.status(400).json({ error: 'Must provide roomId or recipientId' });
     }

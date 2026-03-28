@@ -32,6 +32,28 @@ export default function ChatArea() {
     }
   }, [messages]);
 
+  const handleInvite = async () => {
+    const username = window.prompt("Enter the username to invite to this room:");
+    if (!username) return;
+
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/rooms/${activeRoomId}/invite`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ username })
+      });
+      const data = await res.json();
+      if (res.ok) alert("User invited successfully!");
+      else alert(data.error || "Failed to invite user");
+    } catch (e) {
+      console.error(e);
+      alert("Network error");
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim() || !activeRoomId) return;
@@ -68,8 +90,9 @@ export default function ChatArea() {
 
   return (
     <div className="chat-area">
-      <div className="chat-header glass-panel">
+      <div className="chat-header glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3>Room Messages</h3>
+        <button className="small-action" onClick={handleInvite}>Invite User</button>
       </div>
       
       <div className="chat-messages" ref={scrollRef}>

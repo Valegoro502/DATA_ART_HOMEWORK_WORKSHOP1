@@ -6,6 +6,8 @@ export interface AuthRequest extends Request {
   user?: {
     id: string;
     username: string;
+    isGlobalAdmin: boolean;
+    globalBanType: string | null;
   };
   sessionId?: string;
 }
@@ -29,6 +31,10 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       return res.status(401).json({ error: 'Session expired or invalidated' });
     }
 
+    if (session.user.globalBanType === 'PERMANENT') {
+      return res.status(403).json({ error: 'Your account has been permanently banned.' });
+    }
+
     // Optional: verify JWT signature, but if the session is in DB, we trust it
     const decoded = verifyToken(token);
     if (!decoded) {
@@ -36,7 +42,12 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     }
 
     // Attach user to request
-    req.user = { id: session.user.id, username: session.user.username };
+    req.user = { 
+      id: session.user.id, 
+      username: session.user.username,
+      isGlobalAdmin: session.user.isGlobalAdmin,
+      globalBanType: session.user.globalBanType
+    };
     req.sessionId = session.id;
 
     // Update lastActive
@@ -50,4 +61,11 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     console.error('Auth middleware error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+};
+
+export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user?.isGlobalAdmin) {
+    return res.status(403).json({ error: 'Requires global administrator privileges' });
+  }
+  next();
 };

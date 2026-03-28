@@ -6,6 +6,8 @@ export default function Sidebar() {
   const { user, token, logout } = useAuthStore();
   const { activeRoomId, setActiveChat } = useChatStore();
   const [rooms, setRooms] = useState<any[]>([]);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
 
   useEffect(() => {
     const fetchRooms = async () => {
@@ -22,17 +24,72 @@ export default function Sidebar() {
     fetchRooms();
   }, [token]);
 
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoomName.trim()) return;
+
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/rooms`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ name: newRoomName }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRooms([...rooms, data]);
+        setActiveChat(data.id, null);
+        setNewRoomName('');
+        setIsCreating(false);
+      } else {
+        alert(data.error);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return (
     <div className="sidebar glass-panel">
       <div className="sidebar-header">
         <h3>Chats</h3>
         <div className="user-profile">
-          <span>{user?.username}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <span>{user?.username}</span>
+            {user?.isGlobalAdmin && (
+              <button 
+                 className="small-action" 
+                 style={{ background: '#722ed1' }} 
+                 onClick={() => setActiveChat('ADMIN_PANEL', null)}>
+                 Admin Panel
+              </button>
+            )}
+          </div>
           <button className="small-action" onClick={logout}>Logout</button>
         </div>
       </div>
       <div className="room-list">
-        <h4>My Rooms</h4>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h4>My Rooms</h4>
+          <button className="small-action" onClick={() => setIsCreating(!isCreating)}>+</button>
+        </div>
+        
+        {isCreating && (
+          <form onSubmit={handleCreateRoom} style={{ marginBottom: '15px' }}>
+            <input 
+              type="text" 
+              placeholder="Room Name..." 
+              value={newRoomName}
+              onChange={e => setNewRoomName(e.target.value)}
+              style={{ width: '100%', padding: '8px', marginBottom: '5px', borderRadius: '4px', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white' }}
+              autoFocus
+            />
+            <button type="submit" className="small-action" style={{ width: '100%' }}>Create</button>
+          </form>
+        )}
+
         {rooms.map(r => (
           <div 
             key={r.id} 
