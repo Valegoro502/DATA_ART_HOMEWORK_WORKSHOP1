@@ -1,4 +1,1 @@
-export type ConfigEnv = {
-  command: 'build' | 'serve';
-  mode: string;
-};
+/// <reference types="vite/client" />
